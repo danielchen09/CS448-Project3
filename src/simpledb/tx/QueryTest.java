@@ -5,7 +5,6 @@ import simpledb.plan.Planner;
 import simpledb.query.Scan;
 import simpledb.server.SimpleDB;
 import simpledb.tx.concurrency.ConcurrencyMgr;
-import simpledb.tx.concurrency.LockAbortException;
 import simpledb.tx.concurrency.LockTable;
 import simpledb.tx.concurrency.LockTableTimeout;
 
@@ -21,11 +20,11 @@ public class QueryTest {
     public static void main(String[] args) throws IOException, InterruptedException {
         SimpleDB.BUFFER_SIZE = 100;
         SimpleDB.BLOCK_SIZE = 400;
-        LockTable.VERBOSE = false;
+        LockTable.VERBOSE = true;
         Transaction.VERBOSE = true;
         LockTableTimeout.MAX_TIME = 1000;
 
-        runTest(LockTable.LockTableType.TIMEOUT);
+        runTest(LockTable.LockTableType.WAIT_DIE);
     }
 
     public static void delete(File f) throws IOException {
@@ -66,15 +65,18 @@ public class QueryTest {
         System.out.println("start");
         Thread[] threads = new Thread[RECORDS + 1];
         threads[0] = new Thread(new T1());
+
         for (int i = 0; i < RECORDS; i++) {
             threads[i + 1] = new Thread(new T2(i + 1));
         }
 
         for (int i = 0; i < RECORDS + 1; i++) {
             threads[i].start();
+            Thread.sleep(10);
         }
         for (int i = 0; i < RECORDS + 1; i++) {
             threads[i].join();
+            Thread.sleep(10);
         }
         System.out.flush();
         System.err.flush();
@@ -91,18 +93,13 @@ public class QueryTest {
             tx2.setThread(Thread.currentThread());
             try {
                 String qry = "select B from T1";
-                Thread.sleep(1);
                 Plan p = db.planner().createQueryPlan(qry, tx2);
-                Thread.sleep(1);
+                Thread.sleep(10);
                 Scan s = p.open();
                 while (s.next()) {
-                    Thread.sleep(1);
-//                    System.out.println(s.getString("b"));
                     s.getString("b");
                 }
-                Thread.sleep(1);
                 s.close();
-                Thread.sleep(1);
                 tx2.commit();
             } catch (Exception ex) {
                 ex.printStackTrace();
@@ -131,11 +128,9 @@ public class QueryTest {
             Transaction tx3 = db.newTx();
             tx3.setThread(Thread.currentThread());
             try {
-                Thread.sleep(10);
                 String upd = "update T1 set A=1 where A=" + a;
-                Thread.sleep(1);
+                Thread.sleep(10);
                 db.planner().executeUpdate(upd, tx3);
-                Thread.sleep(1);
                 tx3.commit();
             } catch (Exception ex) {
                 ex.printStackTrace();

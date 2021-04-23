@@ -11,7 +11,7 @@ public class Page {
    public Page(int blocksize) {
       bb = ByteBuffer.allocateDirect(blocksize);
    }
-   
+
    // For creating log pages
    public Page(byte[] b) {
       bb = ByteBuffer.wrap(b);
@@ -38,7 +38,7 @@ public class Page {
       bb.putInt(b.length);
       bb.put(b);
    }
-   
+
    public String getString(int offset) {
       byte[] b = getBytes(offset);
       return new String(b, CHARSET);

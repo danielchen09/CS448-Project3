@@ -80,7 +80,7 @@ public abstract class LockTable {
       if (!locks.containsKey(blk)) {
          locks.put(blk, new LinkedList<>());
       }
-      List<LockEntry> holding = currentlyHolding(blk);
+      LockEntry holding = currentlyHolding(blk);
 
       LockEntry entry = new LockEntry(transaction, LockType.SHARED, compatible(holding, LockType.SHARED));
       locks.get(blk).add(entry);
@@ -95,13 +95,13 @@ public abstract class LockTable {
       if (VERBOSE)
          System.out.println(transaction.txnum + " got lock-S on " + blk);
    }
-   
+
    /**
     * Grant an XLock on the specified block.
     * If a lock of any type exists when the method is called,
     * then the calling thread will be placed on a wait list
     * until the locks are released.
-    * If the thread remains on the wait list for a certain 
+    * If the thread remains on the wait list for a certain
     * amount of time (currently 10 seconds),
     * then an exception is thrown.
     * @param blk a reference to the disk block
@@ -112,7 +112,7 @@ public abstract class LockTable {
       if (!locks.containsKey(blk)) {
          locks.put(blk, new LinkedList<>());
       }
-      List<LockEntry> holding = currentlyHolding(blk);
+      LockEntry holding = currentlyHolding(blk);
 
       LockEntry entry = new LockEntry(transaction, LockType.EXCLUSIVE, compatible(holding, LockType.EXCLUSIVE));
       locks.get(blk).add(entry);
@@ -120,7 +120,7 @@ public abstract class LockTable {
       if (!entry.granted) {
          try {
             if (holding.transaction.equals(transaction) && holding.lockType == LockType.SHARED) {
-               holding.lockType = LockType.EXCLUSIVE;
+               upgrade(blk, transaction);
             } else {
                handleIncompatible(transaction, holding.transaction, entry);
             }
@@ -134,7 +134,7 @@ public abstract class LockTable {
 
    // when lock cannot be granted, this function is called
    abstract void handleIncompatible(Transaction waiting, Transaction holding, LockEntry entry) throws InterruptedException;
-   
+
    /**
     * Release a lock on the specified block.
     * If this lock is the last lock on that block,
@@ -143,7 +143,7 @@ public abstract class LockTable {
     */
    synchronized void unlock(Transaction transaction, BlockId blk) {
       if (VERBOSE)
-         System.out.println(transaction.txnum + " unlock " + blk);
+         System.out.println(transaction.txnum + " unlock " + blk + " check exist: " + locks.get(blk));
       handleUnlock(transaction);
       if (locks == null || locks.get(blk) == null)
          return;
@@ -176,6 +176,15 @@ public abstract class LockTable {
       }
    }
 
+   synchronized public void upgrade(BlockId blk, Transaction transaction) {
+      for (LockEntry entry : locks.get(blk)) {
+         if (entry.transaction.equals(transaction) && entry.lockType == LockType.SHARED) {
+            entry.lockType = LockType.EXCLUSIVE;
+            return;
+         }
+      }
+   }
+
    abstract void handleUnlock(Transaction transaction);
 
    synchronized public LockType lockedIn(BlockId blk) {
@@ -188,25 +197,22 @@ public abstract class LockTable {
       return LockType.UNLOCKED;
    }
 
-   synchronized public List<LockEntry> currentlyHolding(BlockId blk) {
-      List<LockEntry> result = new ArrayList<>();
+   synchronized public LockEntry currentlyHolding(BlockId blk) {
       for (LockEntry entry : locks.get(blk)) {
          if (entry.granted)
-            result.add(entry);
+            return entry;
       }
-      return result;
+      return null;
    }
 
    // implements the compatibility matrix of S and X
-   synchronized public boolean compatible(List<LockEntry> current, LockType type) {
-      for (LockEntry entry : current) {
-         if (current == null)
-            continue;
-         if (entry.lockType == LockType.UNLOCKED)
-            continue;
-         if (entry.lockType == LockType.SHARED && type == LockType.SHARED)
-            continue;
-      }
+   synchronized public boolean compatible(LockEntry current, LockType type) {
+      if (current == null)
+         return true;
+      if (current.lockType == LockType.UNLOCKED)
+         return  true;
+      if (current.lockType == LockType.SHARED && type == LockType.SHARED)
+         return true;
       return false;
    }
 
